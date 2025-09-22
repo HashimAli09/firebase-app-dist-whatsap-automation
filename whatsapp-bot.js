@@ -5,9 +5,106 @@ const path = require('path');
 
 // Directory to store authentication state
 const AUTH_STATE_DIR = './auth-state';
+const CONFIG_FILE = './config.json';
 
 // Ensure auth state directory exists
 fs.ensureDirSync(AUTH_STATE_DIR);
+
+// Global configuration
+let config = null;
+
+/**
+ * Load configuration from config.json
+ * @returns {object} Configuration object
+ */
+async function loadConfig() {
+    try {
+        if (await fs.pathExists(CONFIG_FILE)) {
+            const configData = await fs.readFile(CONFIG_FILE, 'utf8');
+            config = JSON.parse(configData);
+            log('INFO', `Configuration loaded: ${config.targetGroups.length} target groups configured`);
+        } else {
+            // Create default config if it doesn't exist
+            config = {
+                targetGroups: [],
+                settings: {
+                    logAllGroupsIfEmpty: true,
+                    caseSensitiveGroupNames: false
+                }
+            };
+            await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
+            log('INFO', 'Created default config.json - add target groups to filter messages');
+        }
+        return config;
+    } catch (error) {
+        log('ERROR', `Failed to load config: ${error.message}`);
+        // Use default config on error
+        config = {
+            targetGroups: [],
+            settings: {
+                logAllGroupsIfEmpty: true,
+                caseSensitiveGroupNames: false
+            }
+        };
+        return config;
+    }
+}
+
+/**
+ * Check if a group should be monitored based on configuration
+ * @param {string} groupId - Group ID
+ * @param {string} groupName - Group name
+ * @returns {boolean} True if group should be monitored
+ */
+function shouldMonitorGroup(groupId, groupName) {
+    if (!config || !config.targetGroups || config.targetGroups.length === 0) {
+        return config?.settings?.logAllGroupsIfEmpty !== false;
+    }
+
+    const enabledGroups = config.targetGroups.filter(group => group.enabled !== false);
+    if (enabledGroups.length === 0) {
+        return config.settings.logAllGroupsIfEmpty !== false;
+    }
+
+    for (const targetGroup of enabledGroups) {
+        // Check by group ID if specified
+        if (targetGroup.id && targetGroup.id === groupId) {
+            return true;
+        }
+        
+        // Check by group name
+        if (targetGroup.name) {
+            const targetName = config.settings.caseSensitiveGroupNames 
+                ? targetGroup.name 
+                : targetGroup.name.toLowerCase();
+            const currentName = config.settings.caseSensitiveGroupNames 
+                ? groupName 
+                : groupName.toLowerCase();
+            
+            if (targetName === currentName) {
+                // Update the group ID in config for future reference
+                if (!targetGroup.id) {
+                    targetGroup.id = groupId;
+                    saveConfigAsync();
+                }
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+/**
+ * Save configuration asynchronously without blocking
+ */
+async function saveConfigAsync() {
+    try {
+        await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
+    } catch (error) {
+        log('ERROR', `Failed to save config: ${error.message}`);
+    }
+}
 
 /**
  * Format timestamp for logging
@@ -33,6 +130,9 @@ function log(level, message) {
 async function startWhatsAppBot() {
     try {
         log('INFO', 'Starting WhatsApp Group Listener Bot...');
+        
+        // Load configuration
+        await loadConfig();
         
         // Load authentication state
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_STATE_DIR);
@@ -79,7 +179,15 @@ async function startWhatsAppBot() {
                 }
             } else if (connection === 'open') {
                 log('INFO', 'WhatsApp connection established successfully!');
-                log('INFO', 'Bot is now listening for group messages...');
+                const enabledGroups = config.targetGroups.filter(g => g.enabled !== false);
+                if (enabledGroups.length > 0) {
+                    log('INFO', `Bot is now listening for messages from ${enabledGroups.length} configured group(s):`);
+                    enabledGroups.forEach(group => {
+                        log('INFO', `  - ${group.name}${group.id ? ` (${group.id})` : ' (ID will be auto-detected)'}`);
+                    });
+                } else {
+                    log('INFO', 'Bot is now listening for messages from all groups (no specific groups configured)');
+                }
             }
         });
 
@@ -150,6 +258,12 @@ async function logGroupMessage(sock, message) {
         } catch (error) {
             // If we can't get group metadata, use group ID
             groupName = groupId;
+        }
+        
+        // Check if this group should be monitored
+        if (!shouldMonitorGroup(groupId, groupName)) {
+            // Skip logging for groups not in our target list
+            return;
         }
         
         // Format sender information

@@ -7,6 +7,9 @@ yarn-error.log*
 # Authentication state (contains sensitive WhatsApp session data)
 auth-state/
 
+# Configuration files (may contain sensitive group information)
+config.json
+
 # Log files
 logs/
 *.log

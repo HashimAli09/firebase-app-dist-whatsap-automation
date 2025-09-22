@@ -6,12 +6,20 @@
     "start": "node whatsapp-bot.js",
     "test": "node test.js"
   },
-  "keywords": ["whatsapp", "bot", "automation", "baileys", "group-listener"],
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "automation",
+    "baileys",
+    "group-listener"
+  ],
   "author": "",
   "license": "ISC",
   "description": "WhatsApp group listener bot for message monitoring using Baileys library",
   "dependencies": {
     "@whiskeysockets/baileys": "^7.0.0-rc.3",
+    "axios": "^1.12.2",
+    "firebase-admin": "^13.5.0",
     "fs-extra": "^11.3.2",
     "qrcode-terminal": "^0.12.0"
   }

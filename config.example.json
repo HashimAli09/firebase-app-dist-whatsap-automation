@@ -10,5 +10,11 @@
     "logAllGroupsIfEmpty": true,
     "caseSensitiveGroupNames": false,
     "discoveryMode": false
+  },
+  "firebase": {
+    "serviceAccountKeyPath": "./firebase-service-account-key.json",
+    "projectId": "your-firebase-project-id",
+    "androidAppId": "1:123456789:android:abcdef123456",
+    "iosAppId": "1:123456789:ios:abcdef123456"
   }
 }

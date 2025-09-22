@@ -1,16 +1,32 @@
-# WhatsApp Group Listener Bot
+# WhatsApp Firebase App Distribution Bot
 
-A Node.js bot that connects to WhatsApp using the Baileys library to monitor and log messages from WhatsApp groups.
+A Node.js bot that connects to WhatsApp using the Baileys library to monitor group messages and automatically manage Firebase App Distribution testers.
 
 ## Features
 
 - 🔐 **QR Code Authentication**: Authenticate using WhatsApp Web style QR code scanning
 - 📱 **Group Message Monitoring**: Automatically logs all messages sent to groups the bot is a member of
 - 🎯 **Group Filtering**: Configure specific groups to monitor instead of all groups
+- 🚀 **Firebase App Distribution Integration**: Automatically add testers to app releases via WhatsApp messages
 - 📊 **Detailed Logging**: Captures sender information, timestamps, and message content
 - 💾 **Persistent Authentication**: Saves authentication state locally to avoid re-scanning QR codes
 - 📁 **Message Archiving**: Saves message logs to JSON files organized by date
 - 🔄 **Auto-Reconnection**: Automatically reconnects if the connection is lost
+
+## Firebase App Distribution Automation
+
+This bot can automatically process distribution requests sent to WhatsApp groups. When a message is sent in the format:
+
+```
+email@domain.com-android
+email@domain.com-ios
+```
+
+The bot will:
+1. Parse the email and platform from the message
+2. Use Firebase App Distribution API to find the latest app release
+3. Add the email to the testers list for that release
+4. Reply to the WhatsApp group with confirmation
 
 ## Prerequisites
 
@@ -18,6 +34,8 @@ A Node.js bot that connects to WhatsApp using the Baileys library to monitor and
 - npm or yarn package manager
 - A phone with WhatsApp installed
 - Internet connection
+- Firebase project with App Distribution enabled (for distribution features)
+- Firebase service account key (for distribution features)
 
 ## Installation
 
@@ -31,6 +49,44 @@ cd firebase-app-dist-whatsap-automation
 ```bash
 npm install
 ```
+
+3. Set up Firebase (optional, for distribution features):
+   - Create a Firebase project at https://console.firebase.google.com
+   - Enable App Distribution in your Firebase project
+   - Create a service account and download the key file
+   - Save the key file as `firebase-service-account-key.json` in the project root
+
+## Firebase Configuration
+
+To enable Firebase App Distribution features:
+
+1. Copy the example configuration:
+```bash
+cp config.example.json config.json
+```
+
+2. Edit `config.json` and update the Firebase section:
+```json
+{
+  "firebase": {
+    "serviceAccountKeyPath": "./firebase-service-account-key.json",
+    "projectId": "your-firebase-project-id",
+    "androidAppId": "1:123456789:android:abcdef123456",
+    "iosAppId": "1:123456789:ios:abcdef123456"
+  }
+}
+```
+
+**How to get the App IDs:**
+- Go to Firebase Console → Project Settings → General
+- Scroll down to "Your apps" section
+- Copy the App ID for your Android and iOS apps
+
+**Firebase Service Account Setup:**
+1. Go to Firebase Console → Project Settings → Service Accounts
+2. Click "Generate new private key"
+3. Save the downloaded JSON file as `firebase-service-account-key.json`
+4. Make sure the service account has "Firebase App Distribution Admin" role
 
 ## Usage
 
@@ -46,6 +102,31 @@ npm start
    - Scan the QR code displayed in the terminal
 
 3. Once connected, the bot will start monitoring group messages based on your configuration.
+
+### Distribution Requests
+
+To add testers to Firebase App Distribution, send a message to any monitored WhatsApp group in this format:
+
+```
+email@domain.com-android
+email@domain.com-ios
+```
+
+Examples:
+- `john.doe@company.com-android` - Adds John to Android app distribution
+- `jane.smith@company.com-ios` - Adds Jane to iOS app distribution
+
+The bot will:
+1. Validate the email and platform
+2. Find the latest app release in Firebase App Distribution  
+3. Add the email to the testers list
+4. Reply with confirmation: "✅ Successfully added john.doe@company.com to android app distribution"
+
+### Supported Platforms
+- `android` - For Android app distribution
+- `ios` - For iOS app distribution
+
+**Note:** The bot only processes text messages. Images, videos, and other media types are logged but not processed for distribution requests.
 
 ## Group Filtering Configuration
 

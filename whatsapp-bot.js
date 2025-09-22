@@ -2,6 +2,8 @@ const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = requi
 const qrcode = require('qrcode-terminal');
 const fs = require('fs-extra');
 const path = require('path');
+const admin = require('firebase-admin');
+const axios = require('axios');
 
 // Directory to store authentication state
 const AUTH_STATE_DIR = './auth-state';
@@ -12,6 +14,7 @@ fs.ensureDirSync(AUTH_STATE_DIR);
 
 // Global configuration
 let config = null;
+let firebaseApp = null;
 
 /**
  * Load configuration from config.json
@@ -31,6 +34,12 @@ async function loadConfig() {
                     logAllGroupsIfEmpty: true,
                     caseSensitiveGroupNames: false,
                     discoveryMode: false
+                },
+                firebase: {
+                    serviceAccountKeyPath: "./firebase-service-account-key.json",
+                    projectId: "your-firebase-project-id",
+                    androidAppId: "1:123456789:android:abcdef123456",
+                    iosAppId: "1:123456789:ios:abcdef123456"
                 }
             };
             await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
@@ -46,6 +55,12 @@ async function loadConfig() {
                 logAllGroupsIfEmpty: true,
                 caseSensitiveGroupNames: false,
                 discoveryMode: false
+            },
+            firebase: {
+                serviceAccountKeyPath: "./firebase-service-account-key.json",
+                projectId: "your-firebase-project-id",
+                androidAppId: "1:123456789:android:abcdef123456",
+                iosAppId: "1:123456789:ios:abcdef123456"
             }
         };
         return config;
@@ -109,6 +124,221 @@ async function saveConfigAsync() {
 }
 
 /**
+ * Initialize Firebase Admin SDK
+ */
+async function initializeFirebase() {
+    try {
+        if (!config.firebase) {
+            log('WARN', 'Firebase configuration not found in config.json');
+            return false;
+        }
+
+        const { serviceAccountKeyPath, projectId } = config.firebase;
+        
+        if (!await fs.pathExists(serviceAccountKeyPath)) {
+            log('WARN', `Firebase service account key not found at: ${serviceAccountKeyPath}`);
+            return false;
+        }
+
+        const serviceAccount = require(path.resolve(serviceAccountKeyPath));
+        
+        firebaseApp = admin.initializeApp({
+            credential: admin.credential.cert(serviceAccount),
+            projectId: projectId
+        });
+        
+        log('INFO', 'Firebase Admin SDK initialized successfully');
+        return true;
+    } catch (error) {
+        log('ERROR', `Failed to initialize Firebase: ${error.message}`);
+        return false;
+    }
+}
+
+/**
+ * Check if message matches distribution request format: [Email]-[platform]
+ * @param {string} messageContent - The message content to check
+ * @returns {object|null} Parsed request object or null if no match
+ */
+function parseDistributionRequest(messageContent) {
+    const pattern = /^([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})-(android|ios)$/i;
+    const match = messageContent.trim().match(pattern);
+    
+    if (match) {
+        return {
+            email: match[1].toLowerCase(),
+            platform: match[2].toLowerCase()
+        };
+    }
+    
+    return null;
+}
+
+/**
+ * Get Firebase access token for API requests
+ */
+async function getFirebaseAccessToken() {
+    try {
+        const accessToken = await admin.credential.applicationDefault().getAccessToken();
+        return accessToken.access_token;
+    } catch (error) {
+        // If default credentials don't work, try using the service account
+        if (firebaseApp) {
+            const accessToken = await firebaseApp.credential.getAccessToken();
+            return accessToken.access_token;
+        }
+        throw error;
+    }
+}
+
+/**
+ * List Firebase App Distribution releases for an app
+ * @param {string} projectId - Firebase project ID
+ * @param {string} appId - Firebase app ID (not package name)
+ * @returns {Array} Array of releases
+ */
+async function listAppDistributionReleases(projectId, appId) {
+    try {
+        const accessToken = await getFirebaseAccessToken();
+        const url = `https://firebaseappdistribution.googleapis.com/v1/projects/${projectId}/apps/${appId}/releases`;
+        
+        const response = await axios.get(url, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        return response.data.releases || [];
+    } catch (error) {
+        log('ERROR', `Failed to list releases: ${error.message}`);
+        return [];
+    }
+}
+
+/**
+ * Add testers to a Firebase App Distribution release
+ * @param {string} projectId - Firebase project ID
+ * @param {string} appId - Firebase app ID
+ * @param {string} releaseId - Release ID
+ * @param {Array} emails - Array of email addresses
+ */
+async function addTestersToRelease(projectId, appId, releaseId, emails) {
+    try {
+        const accessToken = await getFirebaseAccessToken();
+        const url = `https://firebaseappdistribution.googleapis.com/v1/projects/${projectId}/apps/${appId}/releases/${releaseId}:distribute`;
+        
+        const response = await axios.post(url, {
+            testerEmails: emails
+        }, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        return response.data;
+    } catch (error) {
+        throw new Error(`Failed to add testers: ${error.response?.data?.error?.message || error.message}`);
+    }
+}
+
+/**
+ * Add tester to Firebase App Distribution
+ * @param {string} email - Tester email address
+ * @param {string} platform - Platform (android/ios)
+ * @returns {object} Result object with success status and message
+ */
+async function addTesterToDistribution(email, platform) {
+    try {
+        if (!firebaseApp) {
+            return { success: false, message: 'Firebase not initialized' };
+        }
+
+        // Get the app ID for the platform
+        const appIdKey = platform === 'android' ? 'androidAppId' : 'iosAppId';
+        const appId = config.firebase[appIdKey];
+        
+        if (!appId) {
+            return { 
+                success: false, 
+                message: `No ${platform} app ID configured in config.json (${appIdKey})` 
+            };
+        }
+
+        // List releases to find the latest one
+        const releases = await listAppDistributionReleases(config.firebase.projectId, appId);
+        
+        if (!releases.length) {
+            return { 
+                success: false, 
+                message: `No releases found for ${platform} app` 
+            };
+        }
+
+        // Get the latest release (releases are sorted by creation time desc)
+        const latestRelease = releases[0];
+        const releaseId = latestRelease.name.split('/').pop();
+        
+        // Add tester to the latest release
+        await addTestersToRelease(config.firebase.projectId, appId, releaseId, [email]);
+        
+        return {
+            success: true,
+            message: `Successfully added ${email} to ${platform} app distribution (Release: ${latestRelease.displayVersion || releaseId})`
+        };
+
+    } catch (error) {
+        log('ERROR', `Failed to add tester to distribution: ${error.message}`);
+        return {
+            success: false,
+            message: `Failed to add tester: ${error.message}`
+        };
+    }
+}
+
+/**
+ * Send WhatsApp reply to group
+ * @param {object} sock - WhatsApp socket instance  
+ * @param {string} groupId - Group ID to send message to
+ * @param {string} message - Message to send
+ */
+async function sendGroupReply(sock, groupId, message) {
+    try {
+        await sock.sendMessage(groupId, { text: message });
+        log('INFO', `Sent reply to group ${groupId}: ${message}`);
+    } catch (error) {
+        log('ERROR', `Failed to send group reply: ${error.message}`);
+    }
+}
+
+/**
+ * Process distribution request
+ * @param {object} sock - WhatsApp socket instance
+ * @param {string} groupId - Group ID where request came from
+ * @param {string} messageContent - Message content
+ */
+async function processDistributionRequest(sock, groupId, messageContent) {
+    const request = parseDistributionRequest(messageContent);
+    
+    if (!request) {
+        return; // Not a distribution request
+    }
+
+    log('INFO', `Processing distribution request: ${request.email} for ${request.platform}`);
+    
+    // Add tester to distribution
+    const result = await addTesterToDistribution(request.email, request.platform);
+    
+    // Send reply to group
+    const replyMessage = result.success 
+        ? `✅ ${result.message}`
+        : `❌ ${result.message}`;
+    
+    await sendGroupReply(sock, groupId, replyMessage);
+}
+
+/**
  * Format timestamp for logging
  * @param {Date} date - Date object to format
  * @returns {string} Formatted timestamp
@@ -135,6 +365,9 @@ async function startWhatsAppBot() {
         
         // Load configuration
         await loadConfig();
+        
+        // Initialize Firebase
+        await initializeFirebase();
         
         // Load authentication state
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_STATE_DIR);
@@ -351,6 +584,11 @@ async function logGroupMessage(sock, message) {
         console.log(`  Time: ${formatTimestamp(timestamp)}`);
         console.log(`  Content: ${messageContent}`);
         console.log('='.repeat(80) + '\n');
+        
+        // Process distribution requests if this is a text message
+        if (message.message?.conversation || message.message?.extendedTextMessage) {
+            await processDistributionRequest(sock, groupId, messageContent);
+        }
         
         // Optional: Save to file for persistence
         await saveMessageToFile(logEntry);

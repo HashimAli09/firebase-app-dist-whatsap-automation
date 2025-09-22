@@ -1,0 +1,13 @@
+{
+  "targetGroups": [
+    {
+      "name": "Zbox UAT App Distribution",
+      "id": null,
+      "enabled": true
+    }
+  ],
+  "settings": {
+    "logAllGroupsIfEmpty": true,
+    "caseSensitiveGroupNames": false
+  }
+}

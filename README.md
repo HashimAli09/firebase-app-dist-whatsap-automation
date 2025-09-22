@@ -95,6 +95,44 @@ cp config.example.json config.json
 - **`settings`**: Global configuration options
   - **`logAllGroupsIfEmpty`**: Monitor all groups if no specific groups are configured (default: true)
   - **`caseSensitiveGroupNames`**: Whether group name matching is case-sensitive (default: false)
+  - **`discoveryMode`**: When enabled, logs all group IDs and names to help with configuration (default: false)
+
+### How to Obtain Group IDs
+
+There are several ways to get WhatsApp group IDs for configuration:
+
+#### Method 1: Auto-Detection (Recommended)
+1. Add the group name to your configuration with `"id": null`
+2. Start the bot and wait for a message from that group
+3. The bot will automatically detect and save the group ID
+
+#### Method 2: Discovery Mode
+1. Set `"discoveryMode": true` in your config.json settings
+2. Start the bot and let it run for a while
+3. The bot will display all group IDs and names as messages come in
+4. Copy the group information to your configuration
+5. Set `"discoveryMode": false` to return to normal operation
+
+#### Method 3: Manual Inspection
+1. Start the bot without any group filtering (empty targetGroups array)
+2. Check the console output when messages arrive - group IDs are shown in parentheses
+3. Look for the format: `Group: Group Name (120363043968732014-1634567890@g.us)`
+4. The group ID is the part in parentheses: `120363043968732014-1634567890@g.us`
+
+**Example Discovery Mode Output:**
+```
+================================================================================
+[2024-01-01 12:00:00.000] [DISCOVERY] Found WhatsApp Group:
+  Name: My Work Team
+  ID: 120363043968732014-1634567890@g.us
+  Add to config.json under targetGroups:
+  {
+    "name": "My Work Team",
+    "id": "120363043968732014-1634567890@g.us",
+    "enabled": true
+  }
+================================================================================
+```
 
 ### How Group Filtering Works
 
@@ -158,6 +196,14 @@ You can customize group filtering by editing `config.json` after the first run o
 ### Bot Not Receiving Messages
 - Ensure the bot account is added to the groups you want to monitor
 - Check that the WhatsApp session is still active on your phone
+- Verify your group configuration in config.json
+- Check if group filtering is working correctly - enable discoveryMode to see all available groups
+
+### Group Filtering Issues
+- **Bot ignoring messages from a group**: Check if the group name in config.json matches exactly (unless caseSensitiveGroupNames is false)
+- **Group ID not being saved**: Ensure the bot has received at least one message from the group after adding it to config
+- **Too many messages**: Set specific groups in targetGroups and disable logAllGroupsIfEmpty
+- **Missing groups**: Enable discoveryMode temporarily to see all available groups and their IDs
 
 ## Message Types Supported
 

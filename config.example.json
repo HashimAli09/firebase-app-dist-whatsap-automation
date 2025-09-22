@@ -1,19 +1,9 @@
 {
   "targetGroups": [
     {
-      "name": "My Important Group",
+      "name": "Zbox UAT App Distribution",
       "id": null,
       "enabled": true
-    },
-    {
-      "name": "Work Team Chat",
-      "id": "1234567890-1234567890@g.us",
-      "enabled": true
-    },
-    {
-      "name": "Family Group",
-      "id": null,
-      "enabled": false
     }
   ],
   "settings": {

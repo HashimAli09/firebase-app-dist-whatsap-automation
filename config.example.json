@@ -8,6 +8,7 @@
   ],
   "settings": {
     "logAllGroupsIfEmpty": true,
-    "caseSensitiveGroupNames": false
+    "caseSensitiveGroupNames": false,
+    "discoveryMode": false
   }
 }

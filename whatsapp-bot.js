@@ -29,7 +29,8 @@ async function loadConfig() {
                 targetGroups: [],
                 settings: {
                     logAllGroupsIfEmpty: true,
-                    caseSensitiveGroupNames: false
+                    caseSensitiveGroupNames: false,
+                    discoveryMode: false
                 }
             };
             await fs.writeFile(CONFIG_FILE, JSON.stringify(config, null, 2));
@@ -43,7 +44,8 @@ async function loadConfig() {
             targetGroups: [],
             settings: {
                 logAllGroupsIfEmpty: true,
-                caseSensitiveGroupNames: false
+                caseSensitiveGroupNames: false,
+                discoveryMode: false
             }
         };
         return config;
@@ -217,6 +219,45 @@ async function startWhatsAppBot() {
 }
 
 /**
+ * Discovery mode: Log all group IDs and names for configuration purposes
+ * @param {object} sock - WhatsApp socket instance
+ * @param {object} message - Message object
+ */
+async function discoverGroupInfo(sock, message) {
+    try {
+        const groupId = message.key.remoteJid;
+        
+        // Get group metadata for group name
+        let groupName = 'Unknown Group';
+        try {
+            const groupMetadata = await sock.groupMetadata(groupId);
+            groupName = groupMetadata.subject;
+        } catch (error) {
+            groupName = groupId;
+        }
+        
+        // Log group info for discovery
+        if (!global.discoveredGroups) global.discoveredGroups = new Set();
+        if (!global.discoveredGroups.has(groupId)) {
+            console.log('\n' + '='.repeat(80));
+            log('DISCOVERY', `Found WhatsApp Group:`);
+            console.log(`  Name: ${groupName}`);
+            console.log(`  ID: ${groupId}`);
+            console.log(`  Add to config.json under targetGroups:`);
+            console.log(`  {`);
+            console.log(`    "name": "${groupName}",`);
+            console.log(`    "id": "${groupId}",`);
+            console.log(`    "enabled": true`);
+            console.log(`  }`);
+            console.log('='.repeat(80) + '\n');
+            global.discoveredGroups.add(groupId);
+        }
+    } catch (error) {
+        log('ERROR', `Failed to discover group info: ${error.message}`);
+    }
+}
+
+/**
  * Log group message details
  * @param {object} sock - WhatsApp socket instance
  * @param {object} message - Message object
@@ -260,9 +301,19 @@ async function logGroupMessage(sock, message) {
             groupName = groupId;
         }
         
+        // If discovery mode is enabled, log all group info
+        if (config?.settings?.discoveryMode) {
+            await discoverGroupInfo(sock, message);
+        }
+        
         // Check if this group should be monitored
         if (!shouldMonitorGroup(groupId, groupName)) {
-            // Skip logging for groups not in our target list
+            // Log filtered message for debugging (only show first time per group)
+            if (!global.filteredGroups) global.filteredGroups = new Set();
+            if (!global.filteredGroups.has(groupId)) {
+                log('DEBUG', `Filtering out message from group: ${groupName} (${groupId}) - not in configured target groups`);
+                global.filteredGroups.add(groupId);
+            }
             return;
         }
         

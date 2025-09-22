@@ -1,0 +1,18 @@
+{
+  "name": "firebase-app-dist-whatsap-automation",
+  "version": "1.0.0",
+  "main": "whatsapp-bot.js",
+  "scripts": {
+    "start": "node whatsapp-bot.js",
+    "test": "node test.js"
+  },
+  "keywords": ["whatsapp", "bot", "automation", "baileys", "group-listener"],
+  "author": "",
+  "license": "ISC",
+  "description": "WhatsApp group listener bot for message monitoring using Baileys library",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.3",
+    "fs-extra": "^11.3.2",
+    "qrcode-terminal": "^0.12.0"
+  }
+}
